@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Умный калькулятор меню сада v16.0 (Синхронизация с Google Sheets)</title>
+    <title>Умный калькулятор меню сада v18.0 (Синхронизация с Google Sheets)</title>
     <style>
         :root {
             --primary: #3498db;
@@ -53,7 +53,7 @@
 <body>
 
 <div class="container">
-    <h1>🍎 Умный калькулятор меню сада v16.0</h1>
+    <h1>🍎 Умный калькулятор меню сада v18.0</h1>
     <p style="text-align: center; color: #7f8c8d; margin-top:-10px;">Интеграция с Google Таблицей подключена 🟢</p>
 
     <div class="panel">
@@ -137,37 +137,48 @@
 
     async function fetchDataFromGoogle(dateStr) {
         const dayInfo = document.getElementById('dayInfo');
-        const originalText = dayInfo.innerText;
-        dayInfo.innerText = "⏳ Синхронизация с Google Таблицей...";
+        const originalText = dayInfo.innerText.replace(/\s*\(.*?\)\s*$/, '');
+        dayInfo.innerText = originalText + " (⏳ Синхронизация с Google Таблицей...)";
         dayInfo.style.borderColor = "#f39c12";
         dayInfo.style.color = "#d35400";
         
         try {
-            const response = await fetch(SCRIPT_URL + "?date=" + dateStr);
+            const response = await fetch(SCRIPT_URL + "?date=" + encodeURIComponent(dateStr) + "&_t=" + Date.now(), {
+                method: "GET",
+                redirect: "follow"
+            });
             const data = await response.json();
             
-            if (data.status === "success") {
+            if (data && data.status === "success" && data.data) {
                 fetchedDataCache = data.data;
                 applyFetchedData();
                 dayInfo.innerText = originalText + " (Синхронизировано ✅)";
                 dayInfo.style.borderColor = "var(--secondary)";
                 dayInfo.style.color = "var(--secondary)";
             } else {
-                dayInfo.innerText = originalText + " (⚠️ Ошибка таблицы)";
-                console.error(data.error);
+                const errMsg = (data && data.error) ? data.error : "Проверьте обновление развертывания скрипта";
+                dayInfo.innerText = originalText + " (⚠️ Ошибка: " + errMsg + ")";
+                dayInfo.style.borderColor = "var(--danger)";
+                dayInfo.style.color = "var(--danger)";
+                console.error("Ответ скрипта:", data);
             }
         } catch(e) {
-            dayInfo.innerText = originalText + " (⚠️ Нет связи)";
+            dayInfo.innerText = originalText + " (⚠️ Нет связи со скриптом: " + e.message + ")";
+            dayInfo.style.borderColor = "var(--danger)";
+            dayInfo.style.color = "var(--danger)";
             console.error(e);
         }
     }
     
-    
     function applyFetchedData() {
-        if (!fetchedDataCache) return;
+        if (!fetchedDataCache) {
+            recalcMath();
+            return;
+        }
         
-        const groupSelected = document.getElementById('groupSelect').value;
-        const groupName = document.getElementById('groupSelect').options[document.getElementById('groupSelect').selectedIndex].text;
+        const groupSelectEl = document.getElementById('groupSelect');
+        const groupSelected = groupSelectEl.value;
+        const groupName = groupSelectEl.options[groupSelectEl.selectedIndex].text.trim();
         
         let gOrdered = 0;
         let gAttended = 0;
@@ -176,28 +187,48 @@
         if (groupSelected === 'all') {
             if (fetchedDataCache.totals) {
                 dataSource = fetchedDataCache.totals;
-                // Заполняем глобальные инпуты средними цифрами (например, по Завтраку 1)
-                gOrdered = dataSource["Завтрак 1"].ordered;
-                gAttended = dataSource["Завтрак 1"].attended;
+                gOrdered = (dataSource["Завтрак 1"] && dataSource["Завтрак 1"].ordered) || fetchedDataCache.globalOrdered || 0;
+                gAttended = (dataSource["Завтрак 1"] && dataSource["Завтрак 1"].attended) || fetchedDataCache.globalAttended || 0;
+            } else {
+                gOrdered = fetchedDataCache.globalOrdered || 0;
+                gAttended = fetchedDataCache.globalAttended || 0;
             }
         } else {
-            if (fetchedDataCache.groups && fetchedDataCache.groups[groupName]) {
+            if (fetchedDataCache.groups) {
                 dataSource = fetchedDataCache.groups[groupName];
-                gOrdered = dataSource["Завтрак 1"].ordered;
-                gAttended = dataSource["Завтрак 1"].attended;
+                if (!dataSource) {
+                    const numMatch = groupName.match(/\d+/);
+                    if (numMatch) {
+                        const targetNum = numMatch[0];
+                        for (const k in fetchedDataCache.groups) {
+                            const kMatch = k.match(/\d+/);
+                            if (kMatch && kMatch[0] === targetNum) {
+                                dataSource = fetchedDataCache.groups[k];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (dataSource && dataSource["Завтрак 1"]) {
+                    gOrdered = dataSource["Завтрак 1"].ordered || 0;
+                    gAttended = dataSource["Завтрак 1"].attended || 0;
+                }
             }
         }
         
-        document.getElementById('globalOrdered').value = gOrdered || 0;
-        document.getElementById('globalAttended').value = gAttended || 0;
+        document.getElementById('globalOrdered').value = gOrdered !== "" ? gOrdered : 0;
+        document.getElementById('globalAttended').value = gAttended !== "" ? gAttended : 0;
         
         currentDayData.forEach((item, index) => {
             let mOrdered = "";
             let mAttended = "";
             
             if (dataSource && dataSource[item.meal]) {
-                mOrdered = dataSource[item.meal].ordered;
-                mAttended = dataSource[item.meal].attended;
+                mOrdered = dataSource[item.meal].ordered !== undefined ? dataSource[item.meal].ordered : "";
+                mAttended = dataSource[item.meal].attended !== undefined ? dataSource[item.meal].attended : "";
+            } else if (groupSelected === 'all' && !dataSource) {
+                mOrdered = gOrdered;
+                mAttended = gAttended;
             }
             
             item.customOrdered = mOrdered;
@@ -208,7 +239,7 @@
             if (inputOrd) inputOrd.value = mOrdered;
             if (inputAtt) inputAtt.value = mAttended;
             
-            if (mAttended > 0) {
+            if (parseFloat(mAttended) > 0) {
                 item.selected = true;
                 let c = document.getElementById(`check-${index}`);
                 if (c) c.checked = true;
@@ -218,14 +249,12 @@
         recalcMath();
     }
 
-
-
-    document.getElementById('dateSelect').value = "2026-10-19";
+    document.getElementById('dateSelect').value = "2026-11-02";
 
     function tkClick(tkStr) { alert("Технологическая карта № " + tkStr); }
     
     function onGlobalInput() {
-        fetchedDataCache = null; // Ручной ввод сбрасывает авто-кеш
+        fetchedDataCache = null; // Ручной ввод в верхние поля перекрывает авто-подстановку
         currentDayData.forEach((item, index) => {
             item.customOrdered = "";
             item.customAttended = "";
