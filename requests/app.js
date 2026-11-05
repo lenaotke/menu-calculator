@@ -7,7 +7,7 @@ const $=id=>document.getElementById(id);
 const groups=[1,2,3,4,7,8,9,10].map(n=>'Группа '+n);
 const storage={get(k){try{return localStorage.getItem(k);}catch{return null;}},set(k,v){try{localStorage.setItem(k,v);}catch{}}};
 const sessionDrafts=new Map();
-let connected=false;
+let connected=false,connectionError='';
 let mode=new URLSearchParams(location.search).get('form')==='afternoon'?'afternoon':'morning',calendar=null,pending=null;
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function localCalendar(){
@@ -31,7 +31,7 @@ function render(){
  $('expectedSection').hidden=mode!=='morning';$('expectedFields').replaceChildren(...(mode==='morning'?meals.map((_,i)=>field(i,'expected')):[]));
  $('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Следующая дата ещё не добавлена в календарь';
  const blocked=!connected||!calendar.working||(mode==='morning'&&!calendar.next);$('reviewButton').disabled=blocked;$('dayWarning').hidden=!blocked;
- $('dayWarning').textContent=!connected?'Подключаемся к таблице. Количество детей уже можно заполнить.':!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
+ $('dayWarning').classList.toggle('connecting',!connected&&!connectionError);$('dayWarning').textContent=!connected?(connectionError||'Подключение к заявке…'):!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
  $('formError').hidden=true;loadDraft();
 }
 function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.delete('form');history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
@@ -51,28 +51,34 @@ $('confirmButton').addEventListener('click',async()=>{if(!pending)return;const b
  $('receipt').dataset.requestId=pending.id;$('reviewDialog').close();$('mealForm').hidden=true;$('receipt').hidden=false;$('receiptText').textContent=settings.preview?'Проверка прошла успешно. Это предпросмотр: данные в Google Таблицу не отправлялись.':pending.group+' · Заявка записана в таблицу. Спасибо за заботу о детях!';$('receipt').focus();$('receipt').scrollIntoView({block:'center'});
  }catch(error){$('sendError').textContent=error.message;$('sendError').hidden=false;}finally{button.disabled=false;button.textContent='Отправить заявку';}});
 $('anotherButton').addEventListener('click',()=>{$('receipt').hidden=true;$('mealForm').hidden=false;$('group').focus();});
-function readGoogleCalendar(){return new Promise((resolve,reject)=>{
- const callback='meal734_'+newRequestId().replace(/-/g,'');const script=document.createElement('script');let timer;
- const clean=()=>{clearTimeout(timer);script.remove();delete window[callback];};
- window[callback]=data=>{clean();if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data.today)||typeof data.working!=='boolean')reject(Error('Сервер не подтвердил рабочие даты.'));else resolve(data);};
- script.onerror=()=>{clean();reject(Error('Не удалось подключиться к таблице. Введённые числа останутся на странице. Нажмите «Повторить подключение».'));};
- timer=setTimeout(()=>{clean();reject(Error('Таблица не отвечает. Нажмите «Повторить подключение».'));},18000);
- const url=new URL(settings.googleUrl);url.searchParams.set('callback',callback);script.src=url.toString();document.head.append(script);
-});}
-function sendToGoogle(payload){return new Promise((resolve,reject)=>{
- const iframe=document.createElement('iframe');iframe.name='meal734_submit_'+payload.id;iframe.hidden=true;
- const form=document.createElement('form');form.method='POST';form.action=settings.googleUrl;form.target=iframe.name;form.hidden=true;
- for(const [name,value]of Object.entries({transport:'browser',origin:location.origin,request:JSON.stringify(payload)})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
- let timer;const clean=()=>{clearTimeout(timer);window.removeEventListener('message',receive);form.remove();iframe.remove();};
- const receive=event=>{if(!['https://script.google.com','https://script.googleusercontent.com'].includes(event.origin)&&!/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(event.origin))return;const data=event.data;if(!data||data.type!=='meal734-result'||data.id!==payload.id)return;clean();resolve(data);};
- window.addEventListener('message',receive);timer=setTimeout(()=>{clean();reject(Error('Подтверждение записи не получено. Не закрывайте страницу и повторите отправку: дублирование этой заявки исключено.'));},35000);
- document.body.append(iframe,form);form.submit();
-});}
+async function readGoogleData(params={}){
+ const url=new URL(settings.googleUrl);for(const [k,v]of Object.entries(params))url.searchParams.set(k,v);url.searchParams.set('_r',newRequestId());
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
+ try{const response=await fetch(url,{credentials:'omit',cache:'no-store',signal:controller.signal});if(!response.ok)throw Error('connection');const data=await response.json();if(!data||data.status==='error')throw Error(data?.message||'connection');return data;}
+ catch{return new Promise((resolve,reject)=>{
+  const callback='meal734_'+newRequestId().replace(/-/g,''),script=document.createElement('script');let wait;
+  const clean=()=>{clearTimeout(wait);script.remove();delete window[callback];};
+  window[callback]=data=>{clean();if(data&&data.status!=='error')resolve(data);else reject(Error('Сервер не подтвердил подключение.'));};
+  script.crossOrigin='anonymous';script.onerror=()=>{clean();reject(Error('Не удалось подключиться к таблице. Введённые числа останутся на странице. Нажмите «Повторить подключение».'));};
+  wait=setTimeout(()=>{clean();reject(Error('Таблица не отвечает. Нажмите «Повторить подключение».'));},9000);
+  url.searchParams.set('callback',callback);script.src=url.toString();document.head.append(script);
+ });}finally{clearTimeout(timer);}
+}
+async function readGoogleCalendar(){const data=await readGoogleData();if(!/^\d{4}-\d{2}-\d{2}$/.test(data.today)||typeof data.working!=='boolean')throw Error('Сервер не подтвердил рабочие даты.');return data;}
+async function sendToGoogle(payload){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+ try{await fetch(settings.googleUrl,{method:'POST',mode:'no-cors',credentials:'omit',body:new URLSearchParams({transport:'browser',origin:location.origin,request:JSON.stringify(payload)}),signal:controller.signal});}
+ catch{/* Запрос мог записаться до обрыва связи: проверяем подтверждение по тому же идентификатору. */}
+ finally{clearTimeout(timer);}
+ const until=Date.now()+30000;
+ do{try{const result=await readGoogleData({action:'receipt',id:payload.id});if(result.status==='accepted'&&result.id===payload.id)return result;}catch{}await new Promise(resolve=>setTimeout(resolve,1200));}while(Date.now()<until);
+ throw Error('Подтверждение записи не получено. Не закрывайте страницу и повторите отправку: дублирование этой заявки исключено.');
+}
 async function init(){
- calendar=localCalendar();connected=settings.preview;const savedGroup=storage.get('meal734:group');if(groups.includes(savedGroup))$('group').value=savedGroup;render();
+ connectionError='';calendar=localCalendar();connected=settings.preview;const savedGroup=storage.get('meal734:group');if(groups.includes(savedGroup))$('group').value=savedGroup;render();
  if(settings.preview)return;
  try{const serverCalendar=await readGoogleCalendar();saveDraft();calendar=serverCalendar;connected=true;render();$('retryConnection').hidden=true;}
- catch(error){connected=false;$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').textContent=error.message;$('retryConnection').hidden=false;}
+ catch(error){connected=false;connectionError='Не удалось открыть заявку. Проверьте интернет и нажмите «Повторить подключение».';$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').classList.remove('connecting');$('dayWarning').textContent=connectionError;$('retryConnection').hidden=false;}
 }
 $('retryConnection').addEventListener('click',()=>{saveDraft();init();});
 init();
