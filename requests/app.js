@@ -32,7 +32,7 @@ function render(){
  $('dayWarning').textContent=!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
  $('formError').hidden=true;loadDraft();
 }
-function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.set('form',mode);history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
+function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.delete('form');history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
 document.querySelectorAll('[data-mode]').forEach(btn=>{btn.addEventListener('click',()=>switchMode(btn.dataset.mode));btn.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();switchMode(mode==='morning'?'afternoon':'morning');$(mode+'Tab').focus();}});});
 $('group').addEventListener('change',()=>{storage.set('meal734:group',$('group').value);$('group').removeAttribute('aria-invalid');loadDraft();});
 function reviewBlock(title,values){const box=document.createElement('div');box.className='review-block';const h=document.createElement('h3');h.textContent=title;box.append(h);values.forEach(([name,value])=>{const row=document.createElement('div');row.className='review-line';const label=document.createElement('span');label.textContent=name;const number=document.createElement('strong');number.textContent=value+' детей';row.append(label,number);box.append(row);});return box;}
