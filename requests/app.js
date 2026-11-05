@@ -1,11 +1,13 @@
 'use strict';
-// Предпросмотр не отправляет данные. Публикация и сервер подключаются после согласования.
-const settings={preview:false,apiBase:'https://sad734-meal-requests-api.lenaotke.chatgpt.site'};
+// Календарь и подтверждённая запись напрямую через Google Apps Script.
+const settings={preview:false,googleUrl:'https://script.google.com/macros/s/AKfycbxMoesS4-CwKj8wS0JroF4Vbd_ofLt2m9RRBLBn0y2_E1GPuTbCaLkhP7qXCNbnwh9iOw/exec'};
+function newRequestId(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');}
 const meals=['Завтрак 1','Завтрак 2','Обед','Полдник'];
 const $=id=>document.getElementById(id);
 const groups=[1,2,3,4,7,8,9,10].map(n=>'Группа '+n);
 const storage={get(k){try{return localStorage.getItem(k);}catch{return null;}},set(k,v){try{localStorage.setItem(k,v);}catch{}}};
 const sessionDrafts=new Map();
+let connected=false;
 let mode=new URLSearchParams(location.search).get('form')==='afternoon'?'afternoon':'morning',calendar=null,pending=null;
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function localCalendar(){
@@ -28,8 +30,8 @@ function render(){
  $('factFields').replaceChildren(...(mode==='morning'?[0]:[1,2,3]).map(i=>field(i,'fact')));
  $('expectedSection').hidden=mode!=='morning';$('expectedFields').replaceChildren(...(mode==='morning'?meals.map((_,i)=>field(i,'expected')):[]));
  $('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Следующая дата ещё не добавлена в календарь';
- const blocked=!calendar.working||(mode==='morning'&&!calendar.next);$('reviewButton').disabled=blocked;$('dayWarning').hidden=!blocked;
- $('dayWarning').textContent=!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
+ const blocked=!connected||!calendar.working||(mode==='morning'&&!calendar.next);$('reviewButton').disabled=blocked;$('dayWarning').hidden=!blocked;
+ $('dayWarning').textContent=!connected?'Подключаемся к таблице. Количество детей уже можно заполнить.':!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
  $('formError').hidden=true;loadDraft();
 }
 function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.delete('form');history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
@@ -37,17 +39,40 @@ document.querySelectorAll('[data-mode]').forEach(btn=>{btn.addEventListener('cli
 $('group').addEventListener('change',()=>{storage.set('meal734:group',$('group').value);$('group').removeAttribute('aria-invalid');loadDraft();});
 function reviewBlock(title,values){const box=document.createElement('div');box.className='review-block';const h=document.createElement('h3');h.textContent=title;box.append(h);values.forEach(([name,value])=>{const row=document.createElement('div');row.className='review-line';const label=document.createElement('span');label.textContent=name;const number=document.createElement('strong');number.textContent=value+' детей';row.append(label,number);box.append(row);});return box;}
 $('mealForm').addEventListener('submit',e=>{e.preventDefault();const errors=[];let first=null;if(!groups.includes($('group').value)){$('group').setAttribute('aria-invalid','true');errors.push('Выберите вашу группу.');first=$('group');}document.querySelectorAll('.meal-row input').forEach(el=>{const valid=/^(0|[1-9]\d{0,2})$/.test(el.value);el.setAttribute('aria-invalid',String(!valid));if(!valid){errors.push('Заполните все количества целыми числами от 0 до 999.');first??=el;}});if(errors.length){$('formError').textContent=[...new Set(errors)].join(' ');$('formError').hidden=false;first.focus();return;}
- if(!calendar.working||(mode==='morning'&&!calendar.next))return;
- $('formError').hidden=true;pending={id:crypto.randomUUID(),mode,group:$('group').value,day:calendar.today,expectedDay:mode==='morning'?calendar.next:null,fact:meals.map((_,i)=>$('fact-'+i)?Number($('fact-'+i).value):null),expected:mode==='morning'?meals.map((_,i)=>Number($('expected-'+i).value)):[]};
+ if(!connected||!calendar.working||(mode==='morning'&&!calendar.next))return;
+ $('formError').hidden=true;pending={id:newRequestId(),mode,group:$('group').value,day:calendar.today,expectedDay:mode==='morning'?calendar.next:null,fact:meals.map((_,i)=>$('fact-'+i)?Number($('fact-'+i).value):null),expected:mode==='morning'?meals.map((_,i)=>Number($('expected-'+i).value)):[]};
  $('reviewGroup').textContent=pending.group+' · '+(mode==='morning'?'Утренняя заявка':'После обеда');$('reviewDetails').replaceChildren(reviewBlock('Сегодня · '+dateLabel(calendar.today),meals.map((name,i)=>[name,pending.fact[i]]).filter((_,i)=>pending.fact[i]!==null)));
  if(mode==='morning')$('reviewDetails').append(reviewBlock('Ожидаем · '+dateLabel(calendar.next),meals.map((name,i)=>[name,pending.expected[i]])));
  $('sendError').hidden=true;$('reviewDialog').showModal();
 });
 $('backButton').addEventListener('click',()=>$('reviewDialog').close());
 $('confirmButton').addEventListener('click',async()=>{if(!pending)return;const button=$('confirmButton');button.disabled=true;button.textContent='Отправляем…';try{
- if(!settings.preview){if(!settings.apiBase)throw Error('Отправка пока не подключена.');const response=await fetch(settings.apiBase+'/requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});const result=await response.json();if(!response.ok||result.status!=='accepted')throw Error(result.message||'Не удалось подтвердить запись. Ваши цифры сохранены.');}
+ if(!settings.preview){const result=await sendToGoogle(pending);if(result.status!=='accepted')throw Error(result.message||'Не удалось подтвердить запись. Проверьте подключение и повторите отправку.');}
  $('receipt').dataset.requestId=pending.id;$('reviewDialog').close();$('mealForm').hidden=true;$('receipt').hidden=false;$('receiptText').textContent=settings.preview?'Проверка прошла успешно. Это предпросмотр: данные в Google Таблицу не отправлялись.':pending.group+' · Заявка записана в таблицу. Спасибо за заботу о детях!';$('receipt').focus();$('receipt').scrollIntoView({block:'center'});
  }catch(error){$('sendError').textContent=error.message;$('sendError').hidden=false;}finally{button.disabled=false;button.textContent='Отправить заявку';}});
 $('anotherButton').addEventListener('click',()=>{$('receipt').hidden=true;$('mealForm').hidden=false;$('group').focus();});
-async function init(){try{if(settings.preview)calendar=localCalendar();else{if(!settings.apiBase)throw Error('Подключение ещё не настроено.');const response=await fetch(settings.apiBase+'/calendar',{cache:'no-store'});if(!response.ok)throw Error('Не удалось загрузить рабочие даты. Попробуйте ещё раз.');calendar=await response.json();}const savedGroup=storage.get('meal734:group');if(groups.includes(savedGroup))$('group').value=savedGroup;render();}catch(e){$('todayLabel').textContent='Даты недоступны';$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').textContent=e.message;}}
+function readGoogleCalendar(){return new Promise((resolve,reject)=>{
+ const callback='meal734_'+newRequestId().replace(/-/g,'');const script=document.createElement('script');let timer;
+ const clean=()=>{clearTimeout(timer);script.remove();delete window[callback];};
+ window[callback]=data=>{clean();if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data.today)||typeof data.working!=='boolean')reject(Error('Сервер не подтвердил рабочие даты.'));else resolve(data);};
+ script.onerror=()=>{clean();reject(Error('Не удалось подключиться к таблице. Введённые числа останутся на странице. Нажмите «Повторить подключение».'));};
+ timer=setTimeout(()=>{clean();reject(Error('Таблица не отвечает. Нажмите «Повторить подключение».'));},18000);
+ const url=new URL(settings.googleUrl);url.searchParams.set('callback',callback);script.src=url.toString();document.head.append(script);
+});}
+function sendToGoogle(payload){return new Promise((resolve,reject)=>{
+ const iframe=document.createElement('iframe');iframe.name='meal734_submit_'+payload.id;iframe.hidden=true;
+ const form=document.createElement('form');form.method='POST';form.action=settings.googleUrl;form.target=iframe.name;form.hidden=true;
+ for(const [name,value]of Object.entries({transport:'browser',origin:location.origin,request:JSON.stringify(payload)})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
+ let timer;const clean=()=>{clearTimeout(timer);window.removeEventListener('message',receive);form.remove();iframe.remove();};
+ const receive=event=>{if(!['https://script.google.com','https://script.googleusercontent.com'].includes(event.origin)&&!/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(event.origin))return;const data=event.data;if(!data||data.type!=='meal734-result'||data.id!==payload.id)return;clean();resolve(data);};
+ window.addEventListener('message',receive);timer=setTimeout(()=>{clean();reject(Error('Подтверждение записи не получено. Не закрывайте страницу и повторите отправку: дублирование этой заявки исключено.'));},35000);
+ document.body.append(iframe,form);form.submit();
+});}
+async function init(){
+ calendar=localCalendar();connected=settings.preview;const savedGroup=storage.get('meal734:group');if(groups.includes(savedGroup))$('group').value=savedGroup;render();
+ if(settings.preview)return;
+ try{const serverCalendar=await readGoogleCalendar();saveDraft();calendar=serverCalendar;connected=true;render();$('retryConnection').hidden=true;}
+ catch(error){connected=false;$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').textContent=error.message;$('retryConnection').hidden=false;}
+}
+$('retryConnection').addEventListener('click',()=>{saveDraft();init();});
 init();
