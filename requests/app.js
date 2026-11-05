@@ -5,7 +5,6 @@ function newRequestId(){if(typeof crypto.randomUUID==='function')return crypto.r
 const meals=['Завтрак 1','Завтрак 2','Обед','Полдник'];
 const $=id=>document.getElementById(id);
 const groups=[1,2,3,4,7,8,9,10].map(n=>'Группа '+n);
-const storage={get(k){try{return localStorage.getItem(k);}catch{return null;}},set(k,v){try{localStorage.setItem(k,v);}catch{}}};
 const sessionDrafts=new Map();
 let connected=false,connectionError='';
 let mode=new URLSearchParams(location.search).get('form')==='afternoon'?'afternoon':'morning',calendar=null,pending=null;
@@ -36,7 +35,7 @@ function render(){
 }
 function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.delete('form');history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
 document.querySelectorAll('[data-mode]').forEach(btn=>{btn.addEventListener('click',()=>switchMode(btn.dataset.mode));btn.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();switchMode(mode==='morning'?'afternoon':'morning');$(mode+'Tab').focus();}});});
-$('group').addEventListener('change',()=>{storage.set('meal734:group',$('group').value);$('group').removeAttribute('aria-invalid');loadDraft();});
+$('group').addEventListener('change',()=>{$('group').removeAttribute('aria-invalid');loadDraft();});
 function reviewBlock(title,values){const box=document.createElement('div');box.className='review-block';const h=document.createElement('h3');h.textContent=title;box.append(h);values.forEach(([name,value])=>{const row=document.createElement('div');row.className='review-line';const label=document.createElement('span');label.textContent=name;const number=document.createElement('strong');number.textContent=value+' детей';row.append(label,number);box.append(row);});return box;}
 $('mealForm').addEventListener('submit',e=>{e.preventDefault();pending=null;const errors=[];let first=null;if(!groups.includes($('group').value)){$('group').setAttribute('aria-invalid','true');errors.push('Заполните все поля.');first=$('group');}document.querySelectorAll('.meal-row input').forEach(el=>{const valid=/^(0|[1-9]\d{0,2})$/.test(el.value);el.setAttribute('aria-invalid',String(!valid));if(!valid){errors.push(el.value.trim()===''?'Заполните все поля.':'Укажите целые числа от 0 до 999.');first??=el;}});if(errors.length){$('formError').textContent=[...new Set(errors)].join(' ');$('formError').hidden=false;first.focus({preventScroll:true});$('formError').scrollIntoView({block:'center',behavior:'smooth'});return;}
  if(!connected||!calendar.working||(mode==='morning'&&!calendar.next))return;
@@ -75,10 +74,12 @@ async function sendToGoogle(payload){
  throw Error('Подтверждение записи не получено. Не закрывайте страницу и повторите отправку: дублирование этой заявки исключено.');
 }
 async function init(){
- connectionError='';calendar=localCalendar();connected=settings.preview;const savedGroup=storage.get('meal734:group');if(groups.includes(savedGroup))$('group').value=savedGroup;render();
+ connectionError='';calendar=localCalendar();connected=settings.preview;render();
  if(settings.preview)return;
  try{const serverCalendar=await readGoogleCalendar();saveDraft();calendar=serverCalendar;connected=true;render();$('retryConnection').hidden=true;}
  catch(error){connected=false;connectionError='Не удалось открыть заявку. Проверьте интернет и нажмите «Повторить подключение».';$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').classList.remove('connecting');$('dayWarning').textContent=connectionError;$('retryConnection').hidden=false;}
 }
 $('retryConnection').addEventListener('click',()=>{saveDraft();init();});
+$('group').value='';
+window.addEventListener('pageshow',event=>{if(event.persisted){sessionDrafts.clear();pending=null;$('group').value='';$('mealForm').hidden=false;$('receipt').hidden=true;render();}});
 init();
