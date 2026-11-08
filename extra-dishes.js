@@ -106,7 +106,8 @@
  const originalExport=exportToWord;exportToWord=function(){for(const input of document.querySelectorAll('.norm-editor')){const row=input.closest('tr'),index=Number(row.id.slice(4));if(currentDayData[index]?.selected&&!input.checkValidity()){input.reportValidity();input.focus();return;}}const source=currentDayData;try{currentDayData=source.map(d=>d.manualDish?{...d,dish:d.dish.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}:d);originalExport();}finally{currentDayData=source;}};
  search.addEventListener('input',showResults);mealSelect.addEventListener('change',()=>{showResults();panel.querySelector('#extraNotice').textContent='';});
  const loadWithSort=loadDayData;loadDayData=function(){loadWithSort();sortRows();syncChecks();recalcMath();};
- window.addEventListener('pageshow',event=>{if(event.persisted){search.value='';mealSelect.value='';showResults();}});
- window.onload=loadDayData;
+ function startEmpty(){for(const id of ['dateSelect','groupSelect','globalOrdered','globalAttended'])document.getElementById(id).value='';fetchedDataCache=null;search.value='';mealSelect.value='';loadDayData();}
+ window.addEventListener('pageshow',event=>{if(event.persisted)startEmpty();});
+ window.onload=startEmpty;
 })();
 

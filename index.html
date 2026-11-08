@@ -49,7 +49,7 @@
         .tk-link { color: #2980b9; text-decoration: underline; cursor: pointer; font-weight: bold; }
         @media print { .panel, .btn, .toolbar { display: none; } .container { box-shadow: none; padding: 0; } }
     </style>
-<link rel="stylesheet" href="extra-dishes.css"></head>
+<link rel="stylesheet" href="extra-dishes.css?v=20261108-2"></head>
 <body>
 
 <div class="container">
@@ -59,11 +59,12 @@
     <div class="panel">
         <div class="input-group">
             <label>Выберите дату (Поиск):</label>
-            <input type="date" id="dateSelect" min="2026-10-19" max="2028-06-30" onchange="loadDayData()">
+            <input type="date" id="dateSelect" autocomplete="off" min="2026-10-19" max="2028-06-30" onchange="loadDayData()">
         </div>
         <div class="input-group">
             <label>Группа:</label>
-            <select id="groupSelect" onchange="applyFetchedData()">
+            <select id="groupSelect" onchange="onGroupSelection()" autocomplete="off">
+                <option value="" selected disabled>Выберите группу</option>
                 <option value="all">Все группы (Итог)</option>
                 <option value="g1">Группа 1</option>
                 <option value="g2">Группа 2</option>
@@ -77,15 +78,15 @@
         </div>
         <div class="input-group">
             <label>Общая заявка порций на день:</label>
-            <input type="number" id="globalOrdered" value="" min="1" oninput="onGlobalInput()">
+            <input type="number" id="globalOrdered" autocomplete="off" value="" min="1" oninput="onGlobalInput()">
         </div>
         <div class="input-group">
             <label>Общее пришло детей (База):</label>
-            <input type="number" id="globalAttended" value="" min="1" oninput="onGlobalInput()">
+            <input type="number" id="globalAttended" autocomplete="off" value="" min="1" oninput="onGlobalInput()">
         </div>
     </div>
     
-    <div id="dayInfo" class="day-info">Пожалуйста, выберите дату из календаря...</div>
+    <div id="dayInfo" class="day-info">Выберите дату и группу</div>
 
     <div class="toolbar" id="toolbar" style="display:none;">
         <label style="cursor: pointer; font-weight: bold;">
@@ -172,6 +173,11 @@
         }
     }
     
+    function onGroupSelection() {
+        if (!document.getElementById('dateSelect').value || !document.getElementById('groupSelect').value || !currentDayData.length) loadDayData();
+        else applyFetchedData();
+    }
+
     function applyFetchedData() {
         if (!fetchedDataCache) {
             recalcMath();
@@ -251,7 +257,7 @@
         recalcMath();
     }
 
-    document.getElementById('dateSelect').value = "2026-11-02";
+    document.getElementById('dateSelect').value = "";
 
     function tkClick(tkStr) { alert("Технологическая карта № " + tkStr); }
     
@@ -278,8 +284,11 @@
         tbody.innerHTML = '';
         document.getElementById('totalDay').innerText = '0 г/мл';
         
-        if (!dateVal) {
-            dayInfo.innerText = '📅 Пожалуйста, выберите дату';
+        if (!dateVal || !document.getElementById('groupSelect').value) {
+            fetchedDataCache = null;
+            document.getElementById('globalOrdered').value = '';
+            document.getElementById('globalAttended').value = '';
+            dayInfo.innerText = '📅 Выберите дату и группу';
             toolbar.style.display = 'none';
             return;
         }
@@ -489,6 +498,6 @@
     
     window.onload = loadDayData;
 </script>
-<script src="extra-dishes.js"></script><script src="vendor/jszip.min.js"></script><script src="act-export.js"></script><script src="order-export.js"></script><script src="techcards.js"></script></body>
+<script src="extra-dishes.js?v=20261108-2"></script><script src="vendor/jszip.min.js?v=20261108-2"></script><script src="act-export.js?v=20261108-2"></script><script src="order-export.js?v=20261108-2"></script><script src="correction-export.js?v=20261108-2"></script><script src="techcards.js?v=20261108-2"></script></body>
 </html>
 
