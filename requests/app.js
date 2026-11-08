@@ -11,7 +11,7 @@ let mode=new URLSearchParams(location.search).get('form')==='afternoon'?'afterno
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function localCalendar(){
  const off=new Set(['2026-11-04','2026-12-31','2027-01-01','2027-01-04','2027-01-05','2027-01-06','2027-01-07','2027-01-08','2027-02-22','2027-02-23','2027-03-08','2027-05-03','2027-05-10','2027-06-14','2027-11-04','2027-11-05','2027-12-31','2028-01-01','2028-01-03','2028-01-04','2028-01-05','2028-01-06','2028-01-07']);
- const list=[];for(let d=new Date('2026-11-01T12:00:00Z');d<=new Date('2028-01-10T12:00:00Z');d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(k==='2027-02-20'||(![0,6].includes(d.getUTCDay())&&!off.has(k)))list.push(k);}
+ const list=[];for(let d=new Date('2026-11-01T12:00:00Z');d<=new Date('2028-01-11T12:00:00Z');d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(k==='2027-02-20'||(![0,6].includes(d.getUTCDay())&&!off.has(k)))list.push(k);}
  const index=list.indexOf(today),anchor=index>=0?index:list.findIndex(d=>d>today);return {today,working:index>=0,next:anchor>=0?list[anchor+2]||null:null};
 }
 function dateLabel(key){return new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric',weekday:'long'}).format(new Date(key+'T12:00:00Z'));}
