@@ -87,3 +87,11 @@ $('retryConnection').addEventListener('click',()=>{saveDraft();init();});
 $('group').value='';
 window.addEventListener('pageshow',event=>{if(event.persisted){sessionDrafts.clear();pending=null;$('group').value='';$('mealForm').hidden=false;$('receipt').hidden=true;render();}});
 init();
+
+async function refreshOnDateChange(){
+ const actual=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ if(!calendar||!connected||actual===(calendar.realToday||calendar.today)||$('confirmButton').disabled)return;
+ saveDraft();selectedDay='';pending=null;$('reviewDialog').close();connected=false;render();
+ try{calendar=await readGoogleCalendar();connected=true;connectionError='';render();}catch{connectionError='Дата изменилась. Нажмите «Повторить подключение».';render();$('retryConnection').hidden=false;}
+}
+setInterval(refreshOnDateChange,15000);window.addEventListener('focus',refreshOnDateChange);
