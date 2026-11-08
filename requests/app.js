@@ -12,13 +12,14 @@ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'nume
 function localCalendar(){
  const off=new Set(['2026-11-04','2026-12-31','2027-01-01','2027-01-04','2027-01-05','2027-01-06','2027-01-07','2027-01-08','2027-02-22','2027-02-23','2027-03-08','2027-05-03','2027-05-10','2027-06-14','2027-11-04','2027-11-05','2027-12-31','2028-01-01','2028-01-03','2028-01-04','2028-01-05','2028-01-06','2028-01-07']);
  const list=[];for(let d=new Date('2026-11-01T12:00:00Z');d<=new Date('2028-01-10T12:00:00Z');d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(k==='2027-02-20'||(![0,6].includes(d.getUTCDay())&&!off.has(k)))list.push(k);}
- const index=list.indexOf(today);return {today,working:index>=0,next:index>=0?list[index+1]||null:null};
+ const index=list.indexOf(today);return {today,working:index>=0,next:index>=0?list[index+2]||null:null};
 }
 function dateLabel(key){return new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric',weekday:'long'}).format(new Date(key+'T12:00:00Z'));}
+function expectedHeading(key){const d=new Date(key+'T12:00:00Z'),week=['воскресенье','понедельник','вторник','среду','четверг','пятницу','субботу'][d.getUTCDay()];return 'Сколько детей ожидаем на '+week+', '+new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric'}).format(d)+'?';}
 function draftKey(){return 'meal734:draft:'+calendar.today+':'+mode+':'+$('group').value;}
 function saveDraft(){if(!calendar)return;const v={};document.querySelectorAll('.meal-row input').forEach(el=>v[el.id]=el.value);sessionDrafts.set(draftKey(),v);}
 function loadDraft(){const v=sessionDrafts.get(draftKey())||{};document.querySelectorAll('.meal-row input').forEach(el=>el.value=v[el.id]??'');}
-function field(index,kind){const row=document.createElement('div');row.className='meal-row';const id=kind+'-'+index;row.innerHTML=`<label for="${id}">${meals[index]} <span class="required">*</span></label><div class="input-wrap"><input id="${id}" name="${id}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="—" required aria-label="${meals[index]} — ${kind==='fact'?'получили сегодня':'ожидаем на следующий рабочий день'}" aria-describedby="${kind==='fact'?'factHelp':'nextLabel'}"><span>детей</span></div>`;row.querySelector('input').addEventListener('input',e=>{e.target.removeAttribute('aria-invalid');saveDraft();});return row;}
+function field(index,kind){const row=document.createElement('div');row.className='meal-row';const id=kind+'-'+index;row.innerHTML=`<label for="${id}">${meals[index]} <span class="required">*</span></label><div class="input-wrap"><input id="${id}" name="${id}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="—" required aria-label="${meals[index]} — ${kind==='fact'?'получили сегодня':'ожидаем на дату заявки'}" aria-describedby="${kind==='fact'?'factHelp':'nextLabel'}"><span>детей</span></div>`;row.querySelector('input').addEventListener('input',e=>{e.target.removeAttribute('aria-invalid');saveDraft();});return row;}
 function render(){
  document.title=(mode==='morning'?'Утренняя заявка':'Послеобеденная заявка')+' · сад №734';
  $('reviewButton').textContent=mode==='morning'?'Отправить утреннюю заявку':'Отправить послеобеденную заявку';
@@ -28,9 +29,9 @@ function render(){
  $('factHeading').textContent=mode==='morning'?'Сколько детей сегодня присутствовало по факту на завтраке 1?':'Сколько детей присутствовало сегодня по факту?';$('factHelp').hidden=mode==='morning';$('factHelp').textContent=mode==='morning'?'':'Сколько детей присутствовало на каждом из этих приёмов пищи?';
  $('factFields').replaceChildren(...(mode==='morning'?[0]:[1,2,3]).map(i=>field(i,'fact')));
  $('expectedSection').hidden=mode!=='morning';$('expectedFields').replaceChildren(...(mode==='morning'?meals.map((_,i)=>field(i,'expected')):[]));
- $('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Следующая дата ещё не добавлена в календарь';
+ $('expectedHeading').textContent=calendar.next?expectedHeading(calendar.next):'Сколько детей ожидаем на третий рабочий день?';$('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Следующая дата ещё не добавлена в календарь';
  const blocked=!connected||!calendar.working||(mode==='morning'&&!calendar.next);$('reviewButton').disabled=blocked;$('dayWarning').hidden=!blocked;
- $('dayWarning').classList.toggle('connecting',!connected&&!connectionError);$('dayWarning').textContent=!connected?(connectionError||'Подключение к заявке…'):!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет следующей рабочей даты. Обратитесь к ответственному за питание.';
+ $('dayWarning').classList.toggle('connecting',!connected&&!connectionError);$('dayWarning').textContent=!connected?(connectionError||'Подключение к заявке…'):!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет даты третьего рабочего дня. Обратитесь к ответственному за питание.';
  $('formError').hidden=true;loadDraft();
 }
 function switchMode(value){if(mode===value)return;saveDraft();mode=value;pending=null;const url=new URL(location.href);url.searchParams.delete('form');history.replaceState(null,'',url);render();$('mealForm').hidden=false;$('receipt').hidden=true;}
@@ -83,3 +84,4 @@ $('retryConnection').addEventListener('click',()=>{saveDraft();init();});
 $('group').value='';
 window.addEventListener('pageshow',event=>{if(event.persisted){sessionDrafts.clear();pending=null;$('group').value='';$('mealForm').hidden=false;$('receipt').hidden=true;render();}});
 init();
+
