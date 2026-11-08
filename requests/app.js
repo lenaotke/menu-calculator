@@ -6,13 +6,13 @@ const meals=['Завтрак 1','Завтрак 2','Обед','Полдник'];
 const $=id=>document.getElementById(id);
 const groups=[1,2,3,4,7,8,9,10].map(n=>'Группа '+n);
 const sessionDrafts=new Map();
-let connected=false,connectionError='';
+let connected=false,connectionError='',selectedDay='';
 let mode=new URLSearchParams(location.search).get('form')==='afternoon'?'afternoon':'morning',calendar=null,pending=null;
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function localCalendar(){
  const off=new Set(['2026-11-04','2026-12-31','2027-01-01','2027-01-04','2027-01-05','2027-01-06','2027-01-07','2027-01-08','2027-02-22','2027-02-23','2027-03-08','2027-05-03','2027-05-10','2027-06-14','2027-11-04','2027-11-05','2027-12-31','2028-01-01','2028-01-03','2028-01-04','2028-01-05','2028-01-06','2028-01-07']);
  const list=[];for(let d=new Date('2026-11-01T12:00:00Z');d<=new Date('2028-01-10T12:00:00Z');d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(k==='2027-02-20'||(![0,6].includes(d.getUTCDay())&&!off.has(k)))list.push(k);}
- const index=list.indexOf(today);return {today,working:index>=0,next:index>=0?list[index+2]||null:null};
+ const index=list.indexOf(today),anchor=index>=0?index:list.findIndex(d=>d>today);return {today,working:index>=0,next:anchor>=0?list[anchor+2]||null:null};
 }
 function dateLabel(key){return new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric',weekday:'long'}).format(new Date(key+'T12:00:00Z'));}
 function expectedHeading(key){const d=new Date(key+'T12:00:00Z'),week=['воскресенье','понедельник','вторник','среду','четверг','пятницу','субботу'][d.getUTCDay()];return 'Сколько детей ожидаем на '+week+', '+new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric'}).format(d)+'?';}
@@ -29,7 +29,9 @@ function render(){
  $('factHeading').textContent=mode==='morning'?'Сколько детей сегодня присутствовало по факту на завтраке 1?':'Сколько детей присутствовало сегодня по факту?';$('factHelp').hidden=mode==='morning';$('factHelp').textContent=mode==='morning'?'':'Сколько детей присутствовало на каждом из этих приёмов пищи?';
  $('factFields').replaceChildren(...(mode==='morning'?[0]:[1,2,3]).map(i=>field(i,'fact')));
  $('expectedSection').hidden=mode!=='morning';$('expectedFields').replaceChildren(...(mode==='morning'?meals.map((_,i)=>field(i,'expected')):[]));
- $('expectedHeading').textContent=calendar.next?expectedHeading(calendar.next):'Сколько детей ожидаем на третий рабочий день?';$('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Следующая дата ещё не добавлена в календарь';
+ $('dateChoiceBox').hidden=!(calendar.dateChoices&&calendar.dateChoices.length);$('dateCaption').textContent=selectedDay?'Дата заявки':'Сегодня, по Москве';
+ const choices=[...new Set([calendar.realToday||today,...(calendar.dateChoices||[])])];$('requestDate').replaceChildren(...choices.map(key=>{const option=document.createElement('option');option.value=key;option.textContent=dateLabel(key);return option;}));$('requestDate').value=calendar.today;
+ $('expectedHeading').textContent=calendar.next?expectedHeading(calendar.next):'Сколько детей ожидаем на третий рабочий день?';$('todayLabel').textContent=dateLabel(calendar.today);$('nextLabel').textContent=calendar.next?dateLabel(calendar.next):'Нужная дата пока недоступна в календаре';
  const blocked=!connected||!calendar.working||(mode==='morning'&&!calendar.next);$('reviewButton').disabled=blocked;$('dayWarning').hidden=!blocked;
  $('dayWarning').classList.toggle('connecting',!connected&&!connectionError);$('dayWarning').textContent=!connected?(connectionError||'Подключение к заявке…'):!calendar.working?'Сегодня нет рабочего дня в календаре сада. Приём заявок откроется в ближайший рабочий день.':'Для утренней заявки пока нет даты третьего рабочего дня. Обратитесь к ответственному за питание.';
  $('formError').hidden=true;loadDraft();
@@ -41,7 +43,7 @@ function reviewBlock(title,values){const box=document.createElement('div');box.c
 $('mealForm').addEventListener('submit',e=>{e.preventDefault();pending=null;const errors=[];let first=null;if(!groups.includes($('group').value)){$('group').setAttribute('aria-invalid','true');errors.push('Заполните все поля.');first=$('group');}document.querySelectorAll('.meal-row input').forEach(el=>{const valid=/^(0|[1-9]\d{0,2})$/.test(el.value);el.setAttribute('aria-invalid',String(!valid));if(!valid){errors.push(el.value.trim()===''?'Заполните все поля.':'Укажите целые числа от 0 до 999.');first??=el;}});if(errors.length){$('formError').textContent=[...new Set(errors)].join(' ');$('formError').hidden=false;first.focus({preventScroll:true});$('formError').scrollIntoView({block:'center',behavior:'smooth'});return;}
  if(!connected||!calendar.working||(mode==='morning'&&!calendar.next))return;
  $('formError').hidden=true;pending={id:newRequestId(),mode,group:$('group').value,day:calendar.today,expectedDay:mode==='morning'?calendar.next:null,fact:meals.map((_,i)=>$('fact-'+i)?Number($('fact-'+i).value):null),expected:mode==='morning'?meals.map((_,i)=>Number($('expected-'+i).value)):[]};
- $('reviewGroup').textContent=pending.group+' · '+(mode==='morning'?'Утренняя заявка':'После обеда');$('reviewDetails').replaceChildren(reviewBlock('Сегодня · '+dateLabel(calendar.today),meals.map((name,i)=>[name,pending.fact[i]]).filter((_,i)=>pending.fact[i]!==null)));
+ $('reviewGroup').textContent=pending.group+' · '+(mode==='morning'?'Утренняя заявка':'После обеда');$('reviewDetails').replaceChildren(reviewBlock('Факт · '+dateLabel(calendar.today),meals.map((name,i)=>[name,pending.fact[i]]).filter((_,i)=>pending.fact[i]!==null)));
  if(mode==='morning')$('reviewDetails').append(reviewBlock('Ожидаем · '+dateLabel(calendar.next),meals.map((name,i)=>[name,pending.expected[i]])));
  $('sendError').hidden=true;$('reviewDialog').showModal();
 });
@@ -64,7 +66,7 @@ async function readGoogleData(params={}){
   url.searchParams.set('callback',callback);script.src=url.toString();document.head.append(script);
  });}finally{clearTimeout(timer);}
 }
-async function readGoogleCalendar(){const data=await readGoogleData();if(!/^\d{4}-\d{2}-\d{2}$/.test(data.today)||typeof data.working!=='boolean')throw Error('Сервер не подтвердил рабочие даты.');return data;}
+async function readGoogleCalendar(){const data=await readGoogleData(selectedDay?{requestedDay:selectedDay}:{});if(!/^\d{4}-\d{2}-\d{2}$/.test(data.today)||typeof data.working!=='boolean')throw Error('Сервер не подтвердил рабочие даты.');return data;}
 async function sendToGoogle(payload){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
  try{await fetch(settings.googleUrl,{method:'POST',mode:'no-cors',credentials:'omit',body:new URLSearchParams({transport:'browser',origin:location.origin,request:JSON.stringify(payload)}),signal:controller.signal});}
@@ -80,8 +82,8 @@ async function init(){
  try{const serverCalendar=await readGoogleCalendar();saveDraft();calendar=serverCalendar;connected=true;render();$('retryConnection').hidden=true;}
  catch(error){connected=false;connectionError='Не удалось открыть заявку. Проверьте интернет и нажмите «Повторить подключение».';$('reviewButton').disabled=true;$('dayWarning').hidden=false;$('dayWarning').classList.remove('connecting');$('dayWarning').textContent=connectionError;$('retryConnection').hidden=false;}
 }
+$('requestDate').addEventListener('change',async()=>{saveDraft();selectedDay=$('requestDate').value;pending=null;connected=false;render();try{calendar=await readGoogleCalendar();connected=true;connectionError='';render();}catch{connectionError='Не удалось изменить дату. Нажмите «Повторить подключение».';render();$('retryConnection').hidden=false;}});
 $('retryConnection').addEventListener('click',()=>{saveDraft();init();});
 $('group').value='';
 window.addEventListener('pageshow',event=>{if(event.persisted){sessionDrafts.clear();pending=null;$('group').value='';$('mealForm').hidden=false;$('receipt').hidden=true;render();}});
 init();
-
